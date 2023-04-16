@@ -1,0 +1,61 @@
+!pip install yfinance
+!pip install mplfinance
+import pandas as pd
+import mplfinance as mpf
+import numpy as np
+from pandas_datareader import data as web
+import yfinance as yf
+
+yf.pdr_override()
+start = '2019-01-01'
+end = '2023-04-15'
+data = web.get_data_yahoo('BTC-USD', start=start, end=end)
+
+def macd_func(df,a=12,b=26,c=9):
+  EMA_short = df['Close'].ewm(span=a, adjust=False,min_periods= a+1).mean()
+  EMA_long = df['Close'].ewm(span=b, adjust=False,min_periods= b+1).mean()
+  MACD = EMA_short - EMA_long
+  signal = MACD.ewm(span=c, adjust=False,min_periods=c+1).mean()
+  df['macd'] = MACD
+  df['signal_line'] = signal
+  df['histogram'] = df['macd'] - df['signal_line']
+  
+  #find entry point
+  df['shift_hist'] = df['histogram'].shift(1)
+  df[(df['histogram'] > 0) & (df['shift_hist'] < 0)]
+  df.loc[(df['histogram']> 0) &  (df['shift_hist'] < 0 ), 'action'] = 'buy'
+  df.loc[(df['histogram']< 0) &  (df['shift_hist'] > 0 ), 'action'] = 'sell'
+  df.loc[df['action'] == 'buy', 'marker_position'] = df['Low'] *0.98
+  df.loc[df['action'] == 'sell', 'marker_position'] = df['High'] *1.02
+
+
+  return df
+
+BTC_macd = macd_func(data,12,26,9)
+BTC_macd
+
+b = macd_func(data,12,26,9)
+b[b.action.notnull()]
+
+def macd_plot(df_plot):
+  
+  df = macd_func(df_plot)
+  #for plot MACD
+  mpf_macd = mpf.make_addplot(df['macd'],panel = 1,color = 'blue', title ='MACD')
+  mpf_signal = mpf.make_addplot(df['signal_line'],panel = 1,color = 'orange')
+
+  colors = ['green' if value >= 0 else 'red' for value in df["histogram"]]
+  mpf_histogram = mpf.make_addplot(df['histogram'],type='bar',panel = 1,color = colors)
+
+  #for marker
+  markers = ['^' if x == 'buy' else 'v' for x in df['action']] 
+  color_marker = ['green' if x == 'buy' else 'red' for x in df['action']]
+  plot_signal = mpf.make_addplot(df['marker_position'],type='scatter',markersize= 30, marker=markers,color=color_marker)
+
+  plots = [mpf_macd, mpf_signal, mpf_histogram,plot_signal]
+
+  return plots
+
+  a = macd_plot(data)
+
+  mpf.plot(data,type='candle', style='yahoo',addplot=a,figsize=(20,10))
